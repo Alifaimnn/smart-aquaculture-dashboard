@@ -71,7 +71,7 @@ def get_simulated_data():
     ph_val = st.sidebar.slider("pH Level", 0.0, 14.0, 7.20, 0.1)
     temp_val = st.sidebar.slider("Temperature (°C)", 20.0, 40.0, 28.5, 0.1)
     turb_val = st.sidebar.slider("Turbidity (NTU)", 0.0, 50.0, 10.0, 0.1)
-    tds_val = st.sidebar.slider("TDS (ppm)", 0.0, 800.0, 300.0, 1.0)
+    tds_val = st.sidebar.slider("TDS (ppm)", 0.0, 800.0, 200.0, 1.0)
     
     return {
         "pH": ph_val, 
