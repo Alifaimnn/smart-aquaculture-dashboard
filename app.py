@@ -45,7 +45,7 @@ def add_bg_from_local(image_file):
         st.warning("⚠️ Gambar background tidak ditemukan. Pastikan nama fail betul dan berada di dalam folder yang sama.")
 
 # MASUKKAN NAMA FILE GAMBAR BACKGROUND ANDA DI SINI
-add_bg_from_local("ikan.jpg") 
+add_bg_from_local("ikan.png") 
 
 st.title("🐟 Smart Aquaculture Real-Time Dashboard")
 
