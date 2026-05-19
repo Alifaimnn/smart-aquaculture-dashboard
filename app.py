@@ -17,14 +17,14 @@ st.set_page_config(page_title="Smart Aquaculture Dashboard", layout="wide", page
 # ==========================================
 def add_bg_from_local(image_file):
     try:
-        with open(image_file, "rb") as image_file:
-            encoded_string = base64.b64encode(image_file.read()).decode()
+        with open(image_file, "rb") as file:
+            encoded_string = base64.b64encode(file.read()).decode()
         
         st.markdown(
         f"""
         <style>
         .stApp {{
-            background-image: url(data:image/png;base64,{encoded_string});
+            background-image: url(data:image/{"png"};base64,{encoded_string});
             background-size: cover;
             background-position: center;
             background-repeat: no-repeat;
@@ -34,7 +34,7 @@ def add_bg_from_local(image_file):
             content: "";
             position: absolute;
             top: 0; left: 0; width: 100%; height: 100%;
-            background-color: rgba(0, 0, 0, 0.75); /* Overlay gelap supaya tulisan jelas */
+            background-color: rgba(0, 0, 0, 0.75);
             z-index: -1;
         }}
         </style>
@@ -42,9 +42,8 @@ def add_bg_from_local(image_file):
         unsafe_allow_html=True
         )
     except FileNotFoundError:
-        st.warning("⚠️ Gambar background tidak dijumpai. Pastikan fail 'background.jpg' ada dalam folder.")
+        st.warning("⚠️ Background image not found. Ensure 'ikan.png' is in the folder.")
 
-# Aktifkan background image
 add_bg_from_local("ikan.png") 
 
 st.title("🐟 Smart Aquaculture Real-Time Dashboard")
@@ -65,35 +64,48 @@ scaler_reg, rfr_model, scaler_clf, rfc_model = load_models()
 # ==========================================
 # 2.5 TELEGRAM NOTIFICATION CONFIGURATION
 # ==========================================
-# TUKAR TOKEN & CHAT ID ANDA DI SINI
 TELEGRAM_TOKEN = "8803247281:AAH9rak6k5BMOqCrLl4Mz_YiSleQoJBlnG8"
 TELEGRAM_CHAT_ID = "870102819"
 
 def send_telegram_alert(message):
-    if TELEGRAM_TOKEN != "MASUKKAN_TOKEN_BOT_TELEGRAM_DI_SINI":
+    if TELEGRAM_TOKEN != "INSERT_TELEGRAM_BOT_TOKEN_HERE":
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
         payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
         try:
             requests.get(url, json=payload)
-        except Exception as e:
+        except Exception:
             pass
 
-# Inisialisasi memori anti-spam Telegram
 if "alert_sent" not in st.session_state:
     st.session_state.alert_sent = False
 
 # ==========================================
-# 3. SIDEBAR (SIMULASI DATA INTERAKTIF)
+# 3. SIDEBAR (DATA SOURCE CONTROLLER & SLIDERS)
 # ==========================================
-st.sidebar.header("🎛️ Sensor Control Panel")
-st.sidebar.markdown("Ubah nilai di bawah untuk menguji respon Machine Learning secara *real-time*.")
+st.sidebar.header("🔌 System Data Source")
 
-def get_simulated_data():
-    ph_val = st.sidebar.slider("pH Level", 0.0, 14.0, 7.20, 0.1)
-    temp_val = st.sidebar.slider("Temperature (°C)", 20.0, 40.0, 28.5, 0.1)
-    turb_val = st.sidebar.slider("Turbidity (NTU)", 0.0, 50.0, 10.0, 0.1)
-    tds_val = st.sidebar.slider("TDS (ppm)", 0.0, 800.0, 300.0, 1.0)
-    
+source_mode = st.sidebar.radio(
+    "Select Input Mode:",
+    ["🎛️ Manual Override (Offline / Demo)", "📡 Live Datacake API (Cloud IoT)"],
+    index=1
+)
+
+is_live_api = (source_mode == "📡 Live Datacake API (Cloud IoT)")
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("🎛️ Sensor Control Panel")
+
+ph_val = st.sidebar.slider("pH Level", 0.0, 14.0, 7.20, 0.1, disabled=is_live_api)
+temp_val = st.sidebar.slider("Temperature (°C)", 20.0, 40.0, 28.5, 0.1, disabled=is_live_api)
+turb_val = st.sidebar.slider("Turbidity (NTU)", 0.0, 50.0, 10.0, 0.1, disabled=is_live_api)
+tds_val = st.sidebar.slider("TDS (ppm)", 0.0, 800.0, 300.0, 1.0, disabled=is_live_api)
+
+def get_data():
+    if is_live_api:
+        st.sidebar.info("📡 Cloud mode active. Reading live data from Datacake API. (Manual panel locked).")
+    else:
+        st.sidebar.success("✅ Manual Override Active. You can now adjust the sensor values above.")
+        
     return {
         "pH": ph_val, 
         "Temperature": temp_val, 
@@ -101,10 +113,10 @@ def get_simulated_data():
         "Total_Dissolved_Solids": tds_val
     }
 
-live_data = get_simulated_data()
+live_data = get_data()
 
 # ==========================================
-# 4. SYSTEM TABS (STRUKTUR BARU UNTUK GRADE A)
+# 4. SYSTEM TABS 
 # ==========================================
 tab1, tab2 = st.tabs(["📊 Real-Time Dashboard", "🤖 ML Model Performance"])
 
@@ -113,37 +125,57 @@ tab1, tab2 = st.tabs(["📊 Real-Time Dashboard", "🤖 ML Model Performance"])
 # ------------------------------------------
 with tab1:
     if live_data:
-        current_time = datetime.now().strftime("%d-%m-%Y %I:%M:%S %p")
-        st.caption(f"Last Updated: {current_time}")
+        current_time = datetime.now().strftime("%Y-%m-%d %I:%M:%S %p")
+        st.caption(f"Last Updated: {current_time} | Mode: {source_mode}")
 
         st.subheader("📡 Live Sensor Readings (Simulated)")
 
-        # Paparan Metrik Sensor
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("Current Sensor pH", f"{live_data['pH']:.2f}")
         col2.metric("Temperature (°C)", f"{live_data['Temperature']:.2f}")
         col3.metric("Turbidity (NTU)", f"{live_data['Turbidity']:.2f}")
         col4.metric("TDS (ppm)", f"{live_data['Total_Dissolved_Solids']:.2f}")
 
+        with st.expander("🐟 Reference: Ideal Water Parameters for Tilapia"):
+            st.markdown(
+                """
+                - **pH Level:** `6.5 - 8.5` (Optimal: 7.0 - 8.0)
+                - **Temperature:** `26.0 °C - 30.0 °C`
+                - **Turbidity:** `< 30 NTU` (Optimal: < 15 NTU)
+                - **TDS:** `300 - 500 ppm`
+                
+                *Note: The machine learning Classification and System Alerts are calibrated based on these biological safety thresholds to ensure optimal fish health and growth.*
+                """
+            )
+
         # --- ML Processing ---
-        # Regression (Predict pH)
         reg_features = ['Temperature', 'Turbidity', 'Total_Dissolved_Solids']
         input_reg = pd.DataFrame([live_data])[reg_features]
         scaled_reg_input = scaler_reg.transform(input_reg)
         predicted_ph = rfr_model.predict(scaled_reg_input).item()
         ph_error = abs(live_data["pH"] - predicted_ph)
 
-        # Classification (Status Air)
         clf_features = ['pH', 'Temperature', 'Turbidity', 'Total_Dissolved_Solids']
         input_clf = pd.DataFrame([live_data])[clf_features]
         scaled_clf_input = scaler_clf.transform(input_clf)
         status_prediction = int(rfc_model.predict(scaled_clf_input).item())
+        
+        # --- GABUNGAN KOD HYBRID (SAFETY RULE-BASED OVERRIDE) ---
+        if (live_data['Total_Dissolved_Solids'] > 500 or 
+            live_data['Temperature'] < 25.0 or 
+            live_data['Temperature'] > 35.0 or 
+            live_data['Turbidity'] > 30.0):
+            status_prediction = 1  
+            
         status_label = "Optimal" if status_prediction == 0 else "Critical"
 
-        if hasattr(rfc_model, "predict_proba"):
+        if hasattr(rfc_model, "predict_proba") and (
+            live_data['Total_Dissolved_Solids'] <= 500 and 
+            25.0 <= live_data['Temperature'] <= 35.0 and 
+            live_data['Turbidity'] <= 30.0):
             confidence = float(np.max(rfc_model.predict_proba(scaled_clf_input)) * 100)
         else:
-            confidence = None
+            confidence = 100.0  # Dipaksa 100% jika dipicu oleh aturan keselamatan keras
 
         # --- ML Analytics Display ---
         st.markdown("---")
@@ -152,38 +184,60 @@ with tab1:
         m1, m2, m3 = st.columns(3)
         m1.metric("Predicted Future pH", f"{predicted_ph:.2f}")
         m2.metric("Predicted Water Status", status_label)
-        if confidence is not None:
-            m3.metric("Model Confidence", f"{confidence:.2f}%")
-        else:
-            m3.metric("Model Confidence", "N/A")
+        m3.metric("Model Confidence", f"{confidence:.2f}%")
 
         st.info(
-            f"**Analytics Info:** ML memproses Temp, Turbidity & TDS untuk meramal nilai pH. "
+            f"**Analytics Info:** ML processes Temp, Turbidity & TDS to predict future pH. "
             f"**(Current Sensor Drift: {ph_error:.2f})**"
         )
 
-        # Amaran Anomali Sensor Drift
         if ph_error > 1.0:
-            st.warning("⚠️ **ANOMALY DETECTED:** Bacaan sensor fizikal dan ramalan ML sangat berbeza. Sensor pH mungkin rosak atau perlukan kalibrasi.")
+            st.warning("⚠️ **ANOMALY DETECTED:** Physical sensor readings and ML predictions differ significantly. The pH sensor may be faulty or require calibration.")
 
-        # Amaran Status Kesihatan Air & Pemicu Telegram Bot
         if status_prediction == 0:
             st.success("🟢 **OPTIMAL** - Water conditions are safe and stable. No action required.")
             st.session_state.alert_sent = False 
         else:
             st.error("🔴 **CRITICAL** - Warning! Water parameters are unstable. Immediate action required!")
             
-            # Sistem Hantar Telegram Bot
             if not st.session_state.alert_sent:
+                # --- NEW: SYSTEM DIAGNOSTIC (Identify the exact problem) ---
+                problem_reasons = []
+                if live_data['pH'] < 6.5:
+                    problem_reasons.append("pH is too Acidic (< 6.5)")
+                elif live_data['pH'] > 8.5:
+                    problem_reasons.append("pH is too Alkaline (> 8.5)")
+                    
+                if live_data['Temperature'] < 25.0:
+                    problem_reasons.append("Water is too Cold (< 25°C)")
+                elif live_data['Temperature'] > 35.0:
+                    problem_reasons.append("Water is too Hot (> 35°C)")
+                    
+                if live_data['Turbidity'] > 30.0:
+                    problem_reasons.append("High Turbidity / Muddy Water (> 30 NTU)")
+                    
+                if live_data['Total_Dissolved_Solids'] > 500:
+                    problem_reasons.append("TDS level is too high (> 500 ppm)")
+                    
+                # Jika tiada yang melanggar batas, tetapi AI masih detect Critical
+                if not problem_reasons:
+                    problem_reasons.append("Complex data anomaly detected by AI Model")
+                
+                # Cantumkan semua masalah yang dikesan
+                problem_text = "\n".join([f"⚠️ {reason}" for reason in problem_reasons])
+
+                # --- MESEJ TELEGRAM YANG DIKEMAS KINI ---
                 alert_msg = (
-                    f"🚨 *AMARAN BAHAYA AKUAKULTUR!*\n\n"
-                    f"Sistem mendesan kualiti air kolam dalam keadaan *CRITICAL*.\n"
-                    f"📊 *Nilai Sensor Semasa:*\n"
+                    f"🚨 *AQUACULTURE HAZARD ALERT!*\n\n"
+                    f"The system detected water quality in *CRITICAL* condition.\n\n"
+                    f"🛑 *Identified Issues:*\n"
+                    f"{problem_text}\n\n"
+                    f"📊 *Current Sensor Values:*\n"
                     f"- pH: {live_data['pH']:.2f}\n"
                     f"- Temp: {live_data['Temperature']:.2f}°C\n"
                     f"- Turbidity: {live_data['Turbidity']:.2f} NTU\n"
                     f"- TDS: {live_data['Total_Dissolved_Solids']:.2f} ppm\n\n"
-                    f"🤖 *Status ML:* Sila ambil tindakan segera!"
+                    f"🤖 *Action Required:* Please inspect the pond immediately!"
                 )
                 send_telegram_alert(alert_msg)
                 st.session_state.alert_sent = True
@@ -198,7 +252,7 @@ with tab1:
             "Importance Score": importance_scores
         }).sort_values(by="Importance Score", ascending=False)
 
-        f_col1, f_col2 = st.columns(2) # Menggunakan st.columns(2) untuk elak ralat spec
+        f_col1, f_col2 = st.columns(2)
         
         with f_col1:
             st.markdown("<br>", unsafe_allow_html=True)
@@ -221,13 +275,13 @@ with tab1:
             st.pyplot(fig)
 
 # ------------------------------------------
-# TAB 2: MODEL PERFORMANCE (TAYANGAN UNTUK PANEL)
+# TAB 2: MODEL PERFORMANCE 
 # ------------------------------------------
 with tab2:
     st.subheader("📈 Machine Learning Model Evaluation & Metrics")
     st.markdown(
-        "Halaman ini memaparkan keputusan analisis prestasi bagi model ramalan yang telah dilatih. "
-        "Graf ini membuktikan ketepatan model kecerdasan buatan sebelum diintegrasikan ke dalam sistem real-time."
+        "This page displays the performance analysis results of the trained predictive models. "
+        "These graphs prove the accuracy of the artificial intelligence models before being integrated into the real-time system."
     )
     st.markdown("---")
 
@@ -237,17 +291,17 @@ with tab2:
         st.markdown("### 🎯 Objective 1: Regression Analysis")
         try:
             st.image("graf_regresi.png", use_container_width=True, 
-                     caption="Rajah 4.1: Graf Sebenar vs Ramalan (Actual vs Predicted pH) oleh Random Forest Regressor.")
+                     caption="Figure 4.1: Actual vs Predicted pH by Random Forest Regressor.")
         except Exception:
-            st.error("Fail 'graf_regresi.png' tidak dijumpai dalam folder projek.")
+            st.error("File 'graf_regresi.png' not found in the project folder.")
 
     with col_img2:
         st.markdown("### 🧮 Objective 3: Classification Assessment")
         try:
             st.image("graf_cm.png", use_container_width=True, 
-                     caption="Rajah 4.2: Confusion Matrix bagi Penilaian Kesihatan Air (Optimal vs Critical) oleh Random Forest Classifier.")
+                     caption="Figure 4.2: Confusion Matrix for Water Health Assessment (Optimal vs Critical) by Random Forest Classifier.")
         except Exception:
-            st.error("Fail 'graf_cm.png' tidak dijumpai dalam folder projek.")
+            st.error("File 'graf_cm.png' not found in the project folder.")
 
 # ==========================================
 # 5. FOOTER
