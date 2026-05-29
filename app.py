@@ -166,7 +166,7 @@ if live_data:
     st.markdown("---")
     st.subheader("🤖 Prediction and Water Health Assessment")
 
-    m1, m2 = st.columns(3)
+    m1, m2 = st.columns(2)
     m1.metric("Predicted Future pH", f"{predicted_ph:.2f}")
     m2.metric("Predicted Water Status", status_label)
 
