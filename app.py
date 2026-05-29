@@ -68,13 +68,12 @@ TELEGRAM_TOKEN = "8803247281:AAH9rak6k5BMOqCrLl4Mz_YiSleQoJBlnG8"
 TELEGRAM_CHAT_ID = "870102819"
 
 def send_telegram_alert(message):
-    if TELEGRAM_TOKEN != "INSERT_TELEGRAM_BOT_TOKEN_HERE":
-        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
-        try:
-            requests.get(url, json=payload)
-        except Exception:
-            pass
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
+    try:
+        requests.get(url, json=payload)
+    except Exception:
+        pass
 
 if "alert_sent" not in st.session_state:
     st.session_state.alert_sent = False
@@ -116,192 +115,153 @@ def get_data():
 live_data = get_data()
 
 # ==========================================
-# 4. SYSTEM TABS 
+# 4. MAIN DASHBOARD CONTENT
 # ==========================================
-tab1, tab2 = st.tabs(["📊 Real-Time Dashboard", "🤖 ML Model Performance"])
+if live_data:
+    current_time = datetime.now().strftime("%Y-%m-%d %I:%M:%S %p")
+    st.caption(f"Last Updated: {current_time} | Mode: {source_mode}")
 
-# ------------------------------------------
-# TAB 1: REAL-TIME DASHBOARD
-# ------------------------------------------
-with tab1:
-    if live_data:
-        current_time = datetime.now().strftime("%Y-%m-%d %I:%M:%S %p")
-        st.caption(f"Last Updated: {current_time} | Mode: {source_mode}")
+    st.subheader("📡 Live Sensor Readings (Simulated)")
 
-        st.subheader("📡 Live Sensor Readings (Simulated)")
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Current Sensor pH", f"{live_data['pH']:.2f}")
+    col2.metric("Temperature (°C)", f"{live_data['Temperature']:.2f}")
+    col3.metric("Turbidity (NTU)", f"{live_data['Turbidity']:.2f}")
+    col4.metric("TDS (ppm)", f"{live_data['Total_Dissolved_Solids']:.2f}")
 
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Current Sensor pH", f"{live_data['pH']:.2f}")
-        col2.metric("Temperature (°C)", f"{live_data['Temperature']:.2f}")
-        col3.metric("Turbidity (NTU)", f"{live_data['Turbidity']:.2f}")
-        col4.metric("TDS (ppm)", f"{live_data['Total_Dissolved_Solids']:.2f}")
-
-        with st.expander("🐟 Reference: Ideal Water Parameters for Tilapia"):
-            st.markdown(
-                """
-                - **pH Level:** `6.5 - 8.5` (Optimal: 7.0 - 8.0)
-                - **Temperature:** `26.0 °C - 30.0 °C`
-                - **Turbidity:** `< 30 NTU` (Optimal: < 15 NTU)
-                - **TDS:** `300 - 500 ppm`
-                
-                *Note: The machine learning Classification and System Alerts are calibrated based on these biological safety thresholds to ensure optimal fish health and growth.*
-                """
-            )
-
-        # --- ML Processing ---
-        reg_features = ['Temperature', 'Turbidity', 'Total_Dissolved_Solids']
-        input_reg = pd.DataFrame([live_data])[reg_features]
-        scaled_reg_input = scaler_reg.transform(input_reg)
-        predicted_ph = rfr_model.predict(scaled_reg_input).item()
-        ph_error = abs(live_data["pH"] - predicted_ph)
-
-        clf_features = ['pH', 'Temperature', 'Turbidity', 'Total_Dissolved_Solids']
-        input_clf = pd.DataFrame([live_data])[clf_features]
-        scaled_clf_input = scaler_clf.transform(input_clf)
-        status_prediction = int(rfc_model.predict(scaled_clf_input).item())
-        
-        # --- GABUNGAN KOD HYBRID (SAFETY RULE-BASED OVERRIDE) ---
-        if (live_data['Total_Dissolved_Solids'] > 500 or 
-            live_data['Temperature'] < 25.0 or 
-            live_data['Temperature'] > 35.0 or 
-            live_data['Turbidity'] > 30.0):
-            status_prediction = 1  
+    with st.expander("🐟 Reference: Ideal Water Parameters for Tilapia"):
+        st.markdown(
+            """
+            - **pH Level:** `6.5 - 8.5` (Optimal: 7.0 - 8.0)
+            - **Temperature:** `26.0 °C - 30.0 °C`
+            - **Turbidity:** `< 30 NTU` (Optimal: < 15 NTU)
+            - **TDS:** `300 - 500 ppm`
             
-        status_label = "Optimal" if status_prediction == 0 else "Critical"
-
-        if hasattr(rfc_model, "predict_proba") and (
-            live_data['Total_Dissolved_Solids'] <= 500 and 
-            25.0 <= live_data['Temperature'] <= 35.0 and 
-            live_data['Turbidity'] <= 30.0):
-            confidence = float(np.max(rfc_model.predict_proba(scaled_clf_input)) * 100)
-        else:
-            confidence = 100.0  # Dipaksa 100% jika dipicu oleh aturan keselamatan keras
-
-        # --- ML Analytics Display ---
-        st.markdown("---")
-        st.subheader("🤖 Prediction and Water Health Assessment")
-
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Predicted Future pH", f"{predicted_ph:.2f}")
-        m2.metric("Predicted Water Status", status_label)
-        m3.metric("Model Confidence", f"{confidence:.2f}%")
-
-        st.info(
-            f"**Analytics Info:** ML processes Temp, Turbidity & TDS to predict future pH. "
-            f"**(Current Sensor Drift: {ph_error:.2f})**"
+            *Note: The machine learning Classification and System Alerts are calibrated based on these biological safety thresholds to ensure optimal fish health and growth.*
+            """
         )
 
-        if ph_error > 1.0:
-            st.warning("⚠️ **ANOMALY DETECTED:** Physical sensor readings and ML predictions differ significantly. The pH sensor may be faulty or require calibration.")
+    # --- ML Processing ---
+    reg_features = ['Temperature', 'Turbidity', 'Total_Dissolved_Solids']
+    input_reg = pd.DataFrame([live_data])[reg_features]
+    scaled_reg_input = scaler_reg.transform(input_reg)
+    predicted_ph = rfr_model.predict(scaled_reg_input).item()
+    ph_error = abs(live_data["pH"] - predicted_ph)
 
-        if status_prediction == 0:
-            st.success("🟢 **OPTIMAL** - Water conditions are safe and stable. No action required.")
-            st.session_state.alert_sent = False 
-        else:
-            st.error("🔴 **CRITICAL** - Warning! Water parameters are unstable. Immediate action required!")
-            
-            if not st.session_state.alert_sent:
-                # --- NEW: SYSTEM DIAGNOSTIC (Identify the exact problem) ---
-                problem_reasons = []
-                if live_data['pH'] < 6.5:
-                    problem_reasons.append("pH is too Acidic (< 6.5)")
-                elif live_data['pH'] > 8.5:
-                    problem_reasons.append("pH is too Alkaline (> 8.5)")
-                    
-                if live_data['Temperature'] < 25.0:
-                    problem_reasons.append("Water is too Cold (< 25°C)")
-                elif live_data['Temperature'] > 35.0:
-                    problem_reasons.append("Water is too Hot (> 35°C)")
-                    
-                if live_data['Turbidity'] > 30.0:
-                    problem_reasons.append("High Turbidity / Muddy Water (> 30 NTU)")
-                    
-                if live_data['Total_Dissolved_Solids'] > 500:
-                    problem_reasons.append("TDS level is too high (> 500 ppm)")
-                    
-                # Jika tiada yang melanggar batas, tetapi AI masih detect Critical
-                if not problem_reasons:
-                    problem_reasons.append("Complex data anomaly detected by AI Model")
-                
-                # Cantumkan semua masalah yang dikesan
-                problem_text = "\n".join([f"⚠️ {reason}" for reason in problem_reasons])
-
-                # --- MESEJ TELEGRAM YANG DIKEMAS KINI ---
-                alert_msg = (
-                    f"🚨 *AQUACULTURE HAZARD ALERT!*\n\n"
-                    f"The system detected water quality in *CRITICAL* condition.\n\n"
-                    f"🛑 *Identified Issues:*\n"
-                    f"{problem_text}\n\n"
-                    f"📊 *Current Sensor Values:*\n"
-                    f"- pH: {live_data['pH']:.2f}\n"
-                    f"- Temp: {live_data['Temperature']:.2f}°C\n"
-                    f"- Turbidity: {live_data['Turbidity']:.2f} NTU\n"
-                    f"- TDS: {live_data['Total_Dissolved_Solids']:.2f} ppm\n\n"
-                    f"🤖 *Action Required:* Please inspect the pond immediately!"
-                )
-                send_telegram_alert(alert_msg)
-                st.session_state.alert_sent = True
-
-        # --- Feature Importance Section ---
-        st.markdown("---")
-        st.subheader("📊 Feature Importance Analysis (RFR)")
-
-        importance_scores = rfr_model.feature_importances_
-        feature_importance_df = pd.DataFrame({
-            "Feature": reg_features,
-            "Importance Score": importance_scores
-        }).sort_values(by="Importance Score", ascending=False)
-
-        f_col1, f_col2 = st.columns(2)
+    clf_features = ['pH', 'Temperature', 'Turbidity', 'Total_Dissolved_Solids']
+    input_clf = pd.DataFrame([live_data])[clf_features]
+    scaled_clf_input = scaler_clf.transform(input_clf)
+    status_prediction = int(rfc_model.predict(scaled_clf_input).item())
+    
+    # --- GABUNGAN KOD HYBRID (SAFETY RULE-BASED OVERRIDE) ---
+    if (live_data['Total_Dissolved_Solids'] > 500 or 
+        live_data['Temperature'] < 25.0 or 
+        live_data['Temperature'] > 35.0 or 
+        live_data['Turbidity'] > 30.0):
+        status_prediction = 1  
         
-        with f_col1:
-            st.markdown("<br>", unsafe_allow_html=True)
-            st.dataframe(feature_importance_df, use_container_width=True)
-            
-        with f_col2:
-            fig, ax = plt.subplots(figsize=(8, 3.5))
-            fig.patch.set_facecolor('#0e1117') 
-            ax.set_facecolor('#0e1117')
-            
-            ax.barh(feature_importance_df["Feature"], feature_importance_df["Importance Score"], color='skyblue')
-            ax.tick_params(colors='white')
-            ax.xaxis.label.set_color('white')
-            ax.title.set_color('white')
-            
-            ax.set_xlabel("Importance Score")
-            ax.set_title("Influence on pH Prediction")
-            ax.invert_yaxis()
-            ax.grid(axis='x', color='gray', linestyle='--', alpha=0.5)
-            st.pyplot(fig)
+    status_label = "Optimal" if status_prediction == 0 else "Critical"
 
-# ------------------------------------------
-# TAB 2: MODEL PERFORMANCE 
-# ------------------------------------------
-with tab2:
-    st.subheader("📈 Machine Learning Model Evaluation & Metrics")
-    st.markdown(
-        "This page displays the performance analysis results of the trained predictive models. "
-        "These graphs prove the accuracy of the artificial intelligence models before being integrated into the real-time system."
-    )
+    if hasattr(rfc_model, "predict_proba") and (
+        live_data['Total_Dissolved_Solids'] <= 500 and 
+        25.0 <= live_data['Temperature'] <= 35.0 and 
+        live_data['Turbidity'] <= 30.0):
+        confidence = float(np.max(rfc_model.predict_proba(scaled_clf_input)) * 100)
+    else:
+        confidence = 100.0  
+
+    # --- ML Analytics Display ---
     st.markdown("---")
+    st.subheader("🤖 Prediction and Water Health Assessment")
 
-    col_img1, col_img2 = st.columns(2)
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Predicted Future pH", f"{predicted_ph:.2f}")
+    m2.metric("Predicted Water Status", status_label)
+    m3.metric("Model Confidence", f"{confidence:.2f}%")
 
-    with col_img1:
-        st.markdown("### 🎯 Objective 1: Regression Analysis")
-        try:
-            st.image("graf_regresi.png", use_container_width=True, 
-                     caption="Figure 4.1: Actual vs Predicted pH by Random Forest Regressor.")
-        except Exception:
-            st.error("File 'graf_regresi.png' not found in the project folder.")
+    st.info(
+        f"**Analytics Info:** ML processes Temp, Turbidity & TDS to predict future pH. "
+        f"**(Current Sensor Drift: {ph_error:.2f})**"
+    )
 
-    with col_img2:
-        st.markdown("### 🧮 Objective 3: Classification Assessment")
-        try:
-            st.image("graf_cm.png", use_container_width=True, 
-                     caption="Figure 4.2: Confusion Matrix for Water Health Assessment (Optimal vs Critical) by Random Forest Classifier.")
-        except Exception:
-            st.error("File 'graf_cm.png' not found in the project folder.")
+    if ph_error > 1.0:
+        st.warning("⚠️ **ANOMALY DETECTED:** Physical sensor readings and ML predictions differ significantly. The pH sensor may be faulty or require calibration.")
+
+    if status_prediction == 0:
+        st.success("🟢 **OPTIMAL** - Water conditions are safe and stable. No action required.")
+        st.session_state.alert_sent = False 
+    else:
+        st.error("🔴 **CRITICAL** - Warning! Water parameters are unstable. Immediate action required!")
+        
+        if not st.session_state.alert_sent:
+            problem_reasons = []
+            if live_data['pH'] < 6.5:
+                problem_reasons.append("pH is too Acidic (< 6.5)")
+            elif live_data['pH'] > 8.5:
+                problem_reasons.append("pH is too Alkaline (> 8.5)")
+                
+            if live_data['Temperature'] < 25.0:
+                problem_reasons.append("Water is too Cold (< 25°C)")
+            elif live_data['Temperature'] > 35.0:
+                problem_reasons.append("Water is too Hot (> 35°C)")
+                
+            if live_data['Turbidity'] > 30.0:
+                problem_reasons.append("High Turbidity / Muddy Water (> 30 NTU)")
+                
+            if live_data['Total_Dissolved_Solids'] > 500:
+                problem_reasons.append("TDS level is too high (> 500 ppm)")
+                
+            if not problem_reasons:
+                problem_reasons.append("Complex data anomaly detected by AI Model")
+            
+            problem_text = "\n".join([f"⚠️ {reason}" for reason in problem_reasons])
+
+            alert_msg = (
+                f"🚨 *AQUACULTURE HAZARD ALERT!*\n\n"
+                f"The system detected water quality in *CRITICAL* condition.\n\n"
+                f"🛑 *Identified Issues:*\n"
+                f"{problem_text}\n\n"
+                f"📊 *Current Sensor Values:*\n"
+                f"- pH: {live_data['pH']:.2f}\n"
+                f"- Temp: {live_data['Temperature']:.2f}°C\n"
+                f"- Turbidity: {live_data['Turbidity']:.2f} NTU\n"
+                f"- TDS: {live_data['Total_Dissolved_Solids']:.2f} ppm\n\n"
+                f"🤖 *Action Required:* Please inspect the pond immediately!"
+            )
+            send_telegram_alert(alert_msg)
+            st.session_state.alert_sent = True
+
+    # --- Feature Importance Section ---
+    st.markdown("---")
+    st.subheader("📊 Feature Importance Analysis (RFR)")
+
+    importance_scores = rfr_model.feature_importances_
+    feature_importance_df = pd.DataFrame({
+        "Feature": reg_features,
+        "Importance Score": importance_scores
+    }).sort_values(by="Importance Score", ascending=False)
+
+    f_col1, f_col2 = st.columns(2)
+    
+    with f_col1:
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.dataframe(feature_importance_df, use_container_width=True)
+        
+    with f_col2:
+        fig, ax = plt.subplots(figsize=(8, 3.5))
+        fig.patch.set_facecolor('#0e1117') 
+        ax.set_facecolor('#0e1117')
+        
+        ax.barh(feature_importance_df["Feature"], feature_importance_df["Importance Score"], color='skyblue')
+        ax.tick_params(colors='white')
+        ax.xaxis.label.set_color('white')
+        ax.title.set_color('white')
+        
+        ax.set_xlabel("Importance Score")
+        ax.set_title("Influence on pH Prediction")
+        ax.invert_yaxis()
+        ax.grid(axis='x', color='gray', linestyle='--', alpha=0.5)
+        st.pyplot(fig)
 
 # ==========================================
 # 5. FOOTER
