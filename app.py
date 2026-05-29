@@ -160,24 +160,15 @@ if live_data:
         live_data['Turbidity'] > 30.0):
         status_prediction = 1  
         
-    status_label = "Optimal" if status_prediction == 0 else "Critical"
-
-    if hasattr(rfc_model, "predict_proba") and (
-        live_data['Total_Dissolved_Solids'] <= 500 and 
-        25.0 <= live_data['Temperature'] <= 35.0 and 
-        live_data['Turbidity'] <= 30.0):
-        confidence = float(np.max(rfc_model.predict_proba(scaled_clf_input)) * 100)
-    else:
-        confidence = 100.0  
+    status_label = "Optimal" if status_prediction == 0 else "Critical" 
 
     # --- ML Analytics Display ---
     st.markdown("---")
     st.subheader("🤖 Prediction and Water Health Assessment")
 
-    m1, m2, m3 = st.columns(3)
+    m1, m2 = st.columns(3)
     m1.metric("Predicted Future pH", f"{predicted_ph:.2f}")
     m2.metric("Predicted Water Status", status_label)
-    m3.metric("Model Confidence", f"{confidence:.2f}%")
 
     st.info(
         f"**Analytics Info:** ML processes Temp, Turbidity & TDS to predict future pH. "
