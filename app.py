@@ -42,6 +42,7 @@ def add_bg_from_local(image_file):
         unsafe_allow_html=True
         )
     except FileNotFoundError:
+      
         st.warning("⚠️ Background image not found. Ensure 'ikan.png' is in the folder.")
 
 add_bg_from_local("ikan.png") 
@@ -141,19 +142,32 @@ if live_data:
             """
         )
 
-    # --- ML Processing ---
+    # ==========================================
+    # --- ML Processing (THE EARLY WARNING PIPELINE) ---
+    # ==========================================
+    
+    # 1. OBJECTIVE 1: PREDICT FUTURE pH (Virtual Sensor)
     reg_features = ['Temperature', 'Turbidity', 'Total_Dissolved_Solids']
     input_reg = pd.DataFrame([live_data])[reg_features]
     scaled_reg_input = scaler_reg.transform(input_reg)
+    
     predicted_ph = rfr_model.predict(scaled_reg_input).item()
     ph_error = abs(live_data["pH"] - predicted_ph)
 
+    # 2. MIDDLE-GROUND STRATEGY: INJECT PREDICTION INTO CLASSIFIER
+    # use predicted_ph  
+    proactive_data = live_data.copy()
+    proactive_data['pH'] = predicted_ph  
+
     clf_features = ['pH', 'Temperature', 'Turbidity', 'Total_Dissolved_Solids']
-    input_clf = pd.DataFrame([live_data])[clf_features]
+    input_clf = pd.DataFrame([proactive_data])[clf_features]
     scaled_clf_input = scaler_clf.transform(input_clf)
+    
+    # 3. OBJECTIVE 3: STATUS CLASSIFICATION BASED ON PREDICTION
     status_prediction = int(rfc_model.predict(scaled_clf_input).item())
     
-    # --- GABUNGAN KOD HYBRID (SAFETY RULE-BASED OVERRIDE) ---
+    # --- HYBRID CODE INTEGRATION (SAFETY RULE-BASED OVERRIDE) ---
+    # Fail-Safe mechanism for extreme physical anomalies
     if (live_data['Total_Dissolved_Solids'] > 500 or 
         live_data['Temperature'] < 25.0 or 
         live_data['Temperature'] > 35.0 or 
@@ -164,60 +178,63 @@ if live_data:
 
     # --- ML Analytics Display ---
     st.markdown("---")
-    st.subheader("🤖 Prediction and Water Health Assessment")
+    st.subheader("🤖 AI Predictive Assessment (Proactive Warning)")
 
     m1, m2 = st.columns(2)
     m1.metric("Predicted Future pH", f"{predicted_ph:.2f}")
     m2.metric("Predicted Water Status", status_label)
 
     st.info(
-        f"**Analytics Info:** ML processes Temp, Turbidity & TDS to predict future pH. "
+        f"**Proactive Engine:** The AI is ignoring current pH and processing Temp, Turbidity & TDS "
+        f"to forecast the upcoming pH level. It uses this forecast to classify the future status of the pond. "
         f"**(Current Sensor Drift: {ph_error:.2f})**"
     )
 
     if ph_error > 1.0:
-        st.warning("⚠️ **ANOMALY DETECTED:** Physical sensor readings and ML predictions differ significantly. The pH sensor may be faulty or require calibration.")
+        st.warning("⚠️ **ANOMALY DETECTED:** Physical pH sensor readings and AI predictions differ significantly. The physical pH sensor may be covered in algae or requires calibration.")
 
     if status_prediction == 0:
-        st.success("🟢 **OPTIMAL** - Water conditions are safe and stable. No action required.")
+        st.success("🟢 **OPTIMAL** - Water conditions are projected to be safe and stable. No action required.")
         st.session_state.alert_sent = False 
     else:
-        st.error("🔴 **CRITICAL** - Warning! Water parameters are unstable. Immediate action required!")
+        st.error("🔴 **CRITICAL** - Proactive Warning! Toxic reaction predicted. Immediate action required!")
         
         if not st.session_state.alert_sent:
             problem_reasons = []
-            if live_data['pH'] < 6.5:
-                problem_reasons.append("pH is too Acidic (< 6.5)")
-            elif live_data['pH'] > 8.5:
-                problem_reasons.append("pH is too Alkaline (> 8.5)")
+            
+            # Proactive Telegram Messages
+            if predicted_ph < 6.5:
+                problem_reasons.append(f"AI Predicts pH will drop to Acidic ({predicted_ph:.2f})")
+            elif predicted_ph > 8.5:
+                problem_reasons.append(f"AI Predicts pH will spike to Alkaline ({predicted_ph:.2f})")
                 
             if live_data['Temperature'] < 25.0:
-                problem_reasons.append("Water is too Cold (< 25°C)")
+                problem_reasons.append("Water is currently too Cold (< 25°C)")
             elif live_data['Temperature'] > 35.0:
-                problem_reasons.append("Water is too Hot (> 35°C)")
+                problem_reasons.append("Water is currently too Hot (> 35°C)")
                 
             if live_data['Turbidity'] > 30.0:
-                problem_reasons.append("High Turbidity / Muddy Water (> 30 NTU)")
+                problem_reasons.append("High Turbidity / Muddy Water Detected")
                 
             if live_data['Total_Dissolved_Solids'] > 500:
-                problem_reasons.append("TDS level is too high (> 500 ppm)")
+                problem_reasons.append("Dangerous TDS spike detected")
                 
             if not problem_reasons:
-                problem_reasons.append("Complex data anomaly detected by AI Model")
+                problem_reasons.append("Complex data anomaly detected by AI Classification")
             
             problem_text = "\n".join([f"⚠️ {reason}" for reason in problem_reasons])
 
             alert_msg = (
-                f"🚨 *AQUACULTURE HAZARD ALERT!*\n\n"
-                f"The system detected water quality in *CRITICAL* condition.\n\n"
-                f"🛑 *Identified Issues:*\n"
+                f"🚨 *PROACTIVE AQUACULTURE ALERT!*\n\n"
+                f"The AI model predicts the water quality will reach a *CRITICAL* state shortly.\n\n"
+                f"🛑 *AI Detected Hazards:*\n"
                 f"{problem_text}\n\n"
                 f"📊 *Current Sensor Values:*\n"
-                f"- pH: {live_data['pH']:.2f}\n"
+                f"- Actual pH: {live_data['pH']:.2f} *(AI Forecast: {predicted_ph:.2f})*\n"
                 f"- Temp: {live_data['Temperature']:.2f}°C\n"
                 f"- Turbidity: {live_data['Turbidity']:.2f} NTU\n"
                 f"- TDS: {live_data['Total_Dissolved_Solids']:.2f} ppm\n\n"
-                f"🤖 *Action Required:* Please inspect the pond immediately!"
+                f"🤖 *Action Required:* Turn on the aerators/pumps immediately before fish mortality occurs."
             )
             send_telegram_alert(alert_msg)
             st.session_state.alert_sent = True
