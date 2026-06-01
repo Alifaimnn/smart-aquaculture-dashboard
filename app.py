@@ -98,7 +98,7 @@ st.sidebar.subheader("🎛️ Sensor Control Panel")
 ph_val = st.sidebar.slider("pH Level", 0.0, 14.0, 7.20, 0.1, disabled=is_live_api)
 temp_val = st.sidebar.slider("Temperature (°C)", 20.0, 40.0, 28.5, 0.1, disabled=is_live_api)
 turb_val = st.sidebar.slider("Turbidity (NTU)", 0.0, 50.0, 10.0, 0.1, disabled=is_live_api)
-tds_val = st.sidebar.slider("TDS (ppm)", 0.0, 800.0, 300.0, 1.0, disabled=is_live_api)
+tds_val = st.sidebar.slider("TDS (ppm)", 0.0, 800.0, 200.0, 1.0, disabled=is_live_api)
 
 def get_data():
     if is_live_api:
