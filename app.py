@@ -134,9 +134,9 @@ if live_data:
         st.markdown(
             """
             - **pH Level:** `6.5 - 8.5` (Optimal: 7.0 - 8.0)
-            - **Temperature:** `26.0 °C - 30.0 °C`
+            - **Temperature:** `25.0 °C - 32.0 °C`
             - **Turbidity:** `< 30 NTU` (Optimal: < 15 NTU)
-            - **TDS:** `300 - 500 ppm`
+            - **TDS:** `100 - 500 ppm`
             
             *Note: The machine learning Classification and System Alerts are calibrated based on these biological safety thresholds to ensure optimal fish health and growth.*
             """
