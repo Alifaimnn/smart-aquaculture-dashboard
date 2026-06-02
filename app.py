@@ -184,11 +184,11 @@ if live_data:
     m1.metric("Predicted Future pH", f"{predicted_ph:.2f}")
     m2.metric("Predicted Water Status", status_label)
 
-    st.info(
-        f"**Proactive Engine:** The AI is ignoring current pH and processing Temp, Turbidity & TDS "
-        f"to forecast the upcoming pH level. It uses this forecast to classify the future status of the pond. "
-        f"**(Current Sensor Drift: {ph_error:.2f})**"
-    )
+    #st.info(
+     #   f"**Proactive Engine:** The AI is ignoring current pH and processing Temp, Turbidity & TDS "
+     #   f"to forecast the upcoming pH level. It uses this forecast to classify the future status of the pond. "
+     #   f"**(Current Sensor Drift: {ph_error:.2f})**"
+    #)
 
     if ph_error > 1.0:
         st.warning("⚠️ **ANOMALY DETECTED:** Physical pH sensor readings and AI predictions differ significantly. The physical pH sensor may be covered in algae or requires calibration.")
