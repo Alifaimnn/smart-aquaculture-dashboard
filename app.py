@@ -234,7 +234,7 @@ if live_data:
                 f"- Temp: {live_data['Temperature']:.2f}°C\n"
                 f"- Turbidity: {live_data['Turbidity']:.2f} NTU\n"
                 f"- TDS: {live_data['Total_Dissolved_Solids']:.2f} ppm\n\n"
-                f"🤖 *Action Required:* Turn on the aerators/pumps immediately before fish mortality occurs."
+                f"🤖 *Action Required:* Turn on the aerators/pumps immediately for fish safety."
             )
             send_telegram_alert(alert_msg)
             st.session_state.alert_sent = True
