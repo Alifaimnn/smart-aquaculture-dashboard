@@ -1,0 +1,640 @@
+import os
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import joblib
+
+from google.colab import drive
+
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
+from sklearn.metrics import (
+    mean_squared_error,
+    mean_absolute_error,
+    r2_score,
+    accuracy_score,
+    confusion_matrix,
+    ConfusionMatrixDisplay,
+    classification_report
+)
+from sklearn.model_selection import train_test_split
+
+# ============================================================
+# 1. MOUNT GOOGLE DRIVE
+# ============================================================
+
+drive.mount('/content/drive')
+
+OUTPUT_DIR = "/content/drive/MyDrive/Psm"
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+# ============================================================
+# 2. FILE PATHS
+# Site 5 included for raw problem analysis,
+# but excluded from final training because pH readings are abnormal.
+# ============================================================
+
+sites = [
+    {
+        "site_id": 1,
+        "ph": "/content/drive/MyDrive/Psm2/site1/PH1.csv",
+        "temp": "/content/drive/MyDrive/Psm2/site1/Temperature1.csv",
+        "tds": "/content/drive/MyDrive/Psm2/site1/Time Dissolve Solid1.csv",
+        "turb": "/content/drive/MyDrive/Psm2/site1/Turbidity1.csv"
+    },
+    {
+        "site_id": 2,
+        "ph": "/content/drive/MyDrive/Psm/site 2.2/PH2.csv",
+        "temp": "/content/drive/MyDrive/Psm/site 2.2/Temperature2.csv",
+        "tds": "/content/drive/MyDrive/Psm/site 2.2/Time Dissolve Solid2.csv",
+        "turb": "/content/drive/MyDrive/Psm/site 2.2/Turbidity2.csv"
+    },
+    {
+        "site_id": 5,
+        "ph": "/content/drive/MyDrive/Psm/site 5.5/pH5.csv",
+        "temp": "/content/drive/MyDrive/Psm/site 5.5/Temperature5.csv",
+        "tds": "/content/drive/MyDrive/Psm/site 5.5/Time Dissolve Solid5.csv",
+        "turb": "/content/drive/MyDrive/Psm/site 5.5/Turbidity5.csv"
+    }
+]
+
+TRAINING_SITE_IDS = [1, 2]
+
+sensor_cols = ["pH", "Temperature", "Turbidity", "Total_Dissolved_Solids"]
+
+# ============================================================
+# 3. READ AND MERGE SENSOR FILES
+# ============================================================
+
+all_data_list = []
+
+for site in sites:
+    site_id = site["site_id"]
+
+    df_ph = pd.read_csv(site["ph"])
+    df_temp = pd.read_csv(site["temp"])
+    df_tds = pd.read_csv(site["tds"])
+    df_turb = pd.read_csv(site["turb"])
+
+    # Standardize column names
+    for df in [df_ph, df_temp, df_tds, df_turb]:
+        df.columns = df.columns.astype(str).str.strip()
+
+    df_ph = df_ph.rename(columns={"PH": "pH", "pH": "pH"})
+    df_temp = df_temp.rename(columns={"Temperature (°C)": "Temperature"})
+    df_tds = df_tds.rename(columns={"Time Dissolve Solid (ppm)": "Total_Dissolved_Solids"})
+    df_turb = df_turb.rename(columns={"Turbidity (NTU)": "Turbidity"})
+
+    site_df = (
+        df_ph.merge(df_temp, on="time", how="inner")
+             .merge(df_tds, on="time", how="inner")
+             .merge(df_turb, on="time", how="inner")
+    )
+
+    site_df["Site_ID"] = site_id
+    all_data_list.append(site_df)
+
+    print(f"Site {site_id} raw merged samples: {len(site_df)}")
+
+df_master = pd.concat(all_data_list, ignore_index=True)
+
+print("\n✅ Raw combined dataset created")
+print("Total raw combined samples:", len(df_master))
+print("\nRaw samples by site:")
+print(df_master["Site_ID"].value_counts().sort_index())
+
+# ============================================================
+# 4. SAVE RAW COMBINED DATA BEFORE CLEANING
+# ============================================================
+
+raw_combined_path = f"{OUTPUT_DIR}/Raw_Combined_Aquaculture_Before_Cleaning.csv"
+df_master.to_csv(raw_combined_path, index=False)
+
+print("\n✅ Raw combined data saved before cleaning")
+print("Path:", raw_combined_path)
+
+# ============================================================
+# 5. PRE-CLEANING PROBLEM ANALYSIS
+# ============================================================
+
+df_problem = df_master.copy()
+
+for col in sensor_cols:
+    df_problem[col] = pd.to_numeric(df_problem[col], errors="coerce")
+
+# Missing flags
+df_problem["Missing_pH"] = df_problem["pH"].isna()
+df_problem["Missing_Temperature"] = df_problem["Temperature"].isna()
+df_problem["Missing_Turbidity"] = df_problem["Turbidity"].isna()
+df_problem["Missing_TDS"] = df_problem["Total_Dissolved_Solids"].isna()
+
+# Invalid physical sensor reading flags
+df_problem["Invalid_pH"] = (df_problem["pH"] <= 0) | (df_problem["pH"] > 14)
+df_problem["Invalid_Temperature"] = (df_problem["Temperature"] <= 0) | (df_problem["Temperature"] >= 50)
+df_problem["Invalid_TDS"] = df_problem["Total_Dissolved_Solids"] <= 0
+df_problem["Invalid_Turbidity"] = df_problem["Turbidity"] < 0
+
+# Unsafe aquaculture threshold flags
+df_problem["Unsafe_pH"] = (df_problem["pH"] < 6.5) | (df_problem["pH"] > 8.5)
+df_problem["Unsafe_Temperature"] = (df_problem["Temperature"] < 25.0) | (df_problem["Temperature"] > 32.0)
+df_problem["Unsafe_Turbidity"] = df_problem["Turbidity"] >= 30.0
+df_problem["Unsafe_TDS"] = df_problem["Total_Dissolved_Solids"] > 500.0
+
+# Overall flags
+df_problem["Has_Sensor_Error"] = (
+    df_problem["Missing_pH"] |
+    df_problem["Missing_Temperature"] |
+    df_problem["Missing_Turbidity"] |
+    df_problem["Missing_TDS"] |
+    df_problem["Invalid_pH"] |
+    df_problem["Invalid_Temperature"] |
+    df_problem["Invalid_TDS"] |
+    df_problem["Invalid_Turbidity"]
+)
+
+df_problem["Has_Water_Quality_Problem"] = (
+    df_problem["Unsafe_pH"] |
+    df_problem["Unsafe_Temperature"] |
+    df_problem["Unsafe_Turbidity"] |
+    df_problem["Unsafe_TDS"]
+)
+
+def get_problem_type(row):
+    problems = []
+
+    if row["Missing_pH"]:
+        problems.append("Missing pH")
+    if row["Missing_Temperature"]:
+        problems.append("Missing Temperature")
+    if row["Missing_Turbidity"]:
+        problems.append("Missing Turbidity")
+    if row["Missing_TDS"]:
+        problems.append("Missing TDS")
+
+    if row["Invalid_pH"]:
+        problems.append("Invalid pH")
+    if row["Invalid_Temperature"]:
+        problems.append("Invalid Temperature")
+    if row["Invalid_TDS"]:
+        problems.append("Invalid TDS")
+    if row["Invalid_Turbidity"]:
+        problems.append("Invalid Turbidity")
+
+    if row["Unsafe_pH"]:
+        problems.append("Unsafe pH")
+    if row["Unsafe_Temperature"]:
+        problems.append("Unsafe Temperature")
+    if row["Unsafe_Turbidity"]:
+        problems.append("Unsafe Turbidity")
+    if row["Unsafe_TDS"]:
+        problems.append("Unsafe TDS")
+
+    if len(problems) == 0:
+        return "No Problem"
+    else:
+        return ", ".join(problems)
+
+df_problem["Problem_Type"] = df_problem.apply(get_problem_type, axis=1)
+
+# Save full problem report
+problem_report_path = f"{OUTPUT_DIR}/Pre_Cleaning_Problem_Report.csv"
+df_problem.to_csv(problem_report_path, index=False)
+
+print("\n✅ Pre-cleaning problem report saved")
+print("Path:", problem_report_path)
+
+problem_flags = [
+    "Missing_pH",
+    "Missing_Temperature",
+    "Missing_Turbidity",
+    "Missing_TDS",
+    "Invalid_pH",
+    "Invalid_Temperature",
+    "Invalid_TDS",
+    "Invalid_Turbidity",
+    "Unsafe_pH",
+    "Unsafe_Temperature",
+    "Unsafe_Turbidity",
+    "Unsafe_TDS",
+    "Has_Sensor_Error",
+    "Has_Water_Quality_Problem"
+]
+
+# Summary by site
+problem_summary_by_site = df_problem.groupby("Site_ID")[problem_flags].sum().astype(int)
+
+summary_path = f"{OUTPUT_DIR}/Pre_Cleaning_Problem_Summary_By_Site.csv"
+problem_summary_by_site.to_csv(summary_path)
+
+print("\n✅ Problem summary by site saved")
+print("Path:", summary_path)
+print("\n--- Problem Summary by Site ---")
+print(problem_summary_by_site)
+
+# Overall summary
+overall_problem_summary = df_problem[problem_flags].sum().sort_values(ascending=False)
+
+overall_summary_path = f"{OUTPUT_DIR}/Pre_Cleaning_Overall_Problem_Summary.csv"
+overall_problem_summary.to_csv(overall_summary_path, header=["Count"])
+
+print("\n✅ Overall problem summary saved")
+print("Path:", overall_summary_path)
+print("\n--- Overall Problem Summary ---")
+print(overall_problem_summary)
+
+# Save rows with sensor error
+sensor_error_rows = df_problem[df_problem["Has_Sensor_Error"] == True]
+sensor_error_path = f"{OUTPUT_DIR}/Rows_With_Sensor_Error_Before_Cleaning.csv"
+sensor_error_rows.to_csv(sensor_error_path, index=False)
+
+print("\n✅ Rows with sensor error saved")
+print("Path:", sensor_error_path)
+print("Total sensor error rows:", len(sensor_error_rows))
+
+# Save rows with water quality problem
+water_problem_rows = df_problem[df_problem["Has_Water_Quality_Problem"] == True]
+water_problem_path = f"{OUTPUT_DIR}/Rows_With_Water_Quality_Problem_Before_Cleaning.csv"
+water_problem_rows.to_csv(water_problem_path, index=False)
+
+print("\n✅ Rows with water quality problem saved")
+print("Path:", water_problem_path)
+print("Total water quality problem rows:", len(water_problem_rows))
+
+# ============================================================
+# 6. SELECT TRAINING DATASET
+# ============================================================
+
+df_train_raw = df_master[df_master["Site_ID"].isin(TRAINING_SITE_IDS)].copy()
+
+print("\n✅ Training dataset selected")
+print("Training sites:", TRAINING_SITE_IDS)
+print("Training raw samples:", len(df_train_raw))
+print("\nTraining raw samples by site:")
+print(df_train_raw["Site_ID"].value_counts().sort_index())
+
+for col in sensor_cols:
+    df_train_raw[col] = pd.to_numeric(df_train_raw[col], errors="coerce")
+
+training_raw_path = f"{OUTPUT_DIR}/Training_Raw_Site1_Site2_Before_Cleaning.csv"
+df_train_raw.to_csv(training_raw_path, index=False)
+
+print("\n✅ Training raw dataset saved")
+print("Path:", training_raw_path)
+
+# ============================================================
+# 7. GENERAL PHYSICAL CLEANING
+# ============================================================
+
+df_clean = df_train_raw.copy()
+
+raw_training_count = len(df_clean)
+
+df_clean = df_clean.dropna(subset=sensor_cols)
+
+df_clean = df_clean[(df_clean["pH"] > 0) & (df_clean["pH"] <= 14)]
+df_clean = df_clean[(df_clean["Temperature"] > 0) & (df_clean["Temperature"] < 50)]
+df_clean = df_clean[df_clean["Total_Dissolved_Solids"] > 0]
+df_clean = df_clean[df_clean["Turbidity"] >= 0]
+
+print("\n✅ General physical cleaning completed")
+print("Raw training samples:", raw_training_count)
+print("Cleaned training samples:", len(df_clean))
+print("Removed samples:", raw_training_count - len(df_clean))
+
+print("\nCleaned samples by site:")
+print(df_clean["Site_ID"].value_counts().sort_index())
+
+print("\nCleaned parameter statistics:")
+print(df_clean[sensor_cols].describe())
+
+general_cleaned_path = f"{OUTPUT_DIR}/V1_General_Cleaned_Site1_Site2.csv"
+df_clean.to_csv(general_cleaned_path, index=False)
+
+print("\n✅ General cleaned dataset saved")
+print("Path:", general_cleaned_path)
+
+# ============================================================
+# 8. REGRESSION
+# ============================================================
+
+df_reg = df_clean.copy()
+
+# Operating-range pH filtering for stable pH prediction
+df_reg = df_reg[
+    (df_reg["pH"] >= 6.0) &
+    (df_reg["pH"] <= 8.5)
+].copy()
+
+print("\n✅ Regression-specific cleaning completed")
+print("Regression samples:", len(df_reg))
+
+print("\nRegression samples by site:")
+print(df_reg["Site_ID"].value_counts().sort_index())
+
+print("\nRegression pH statistics:")
+print(df_reg["pH"].describe())
+
+regression_cleaned_path = f"{OUTPUT_DIR}/V1_Regression_Cleaned_pH_6_to_8_5.csv"
+df_reg.to_csv(regression_cleaned_path, index=False)
+
+print("\n✅ Regression cleaned dataset saved")
+print("Path:", regression_cleaned_path)
+
+# ============================================================
+# 9. OBJECTIVE 1: RANDOM FOREST REGRESSOR FOR pH PREDICTION
+# ============================================================
+
+reg_features = ["Temperature", "Turbidity", "Total_Dissolved_Solids"]
+
+X_reg = df_reg[reg_features]
+y_reg = df_reg["pH"]
+
+X_train_r, X_test_r, y_train_r, y_test_r = train_test_split(
+    X_reg,
+    y_reg,
+    test_size=0.20,
+    random_state=71,
+    shuffle=True
+)
+
+scaler_reg = MinMaxScaler()
+X_train_r_scaled = scaler_reg.fit_transform(X_train_r)
+X_test_r_scaled = scaler_reg.transform(X_test_r)
+
+rfr_model = RandomForestRegressor(
+    n_estimators=800,
+    random_state=42,
+    n_jobs=-1,
+    min_samples_leaf=1,
+    min_samples_split=2,
+    max_depth=None
+)
+
+rfr_model.fit(X_train_r_scaled, y_train_r)
+
+y_pred_r = rfr_model.predict(X_test_r_scaled)
+
+r2 = r2_score(y_test_r, y_pred_r)
+rmse = np.sqrt(mean_squared_error(y_test_r, y_pred_r))
+mae = mean_absolute_error(y_test_r, y_pred_r)
+
+print("\n--- Objective 1: RFR pH Prediction Results ---")
+print(f"R-squared (R²): {r2:.4f}")
+print(f"RMSE: {rmse:.4f}")
+print(f"MAE: {mae:.4f}")
+
+if r2 >= 0.90 and rmse < 0.10:
+    print("\n✅ Objective 1 target achieved: R² > 0.90 and RMSE < 0.10")
+else:
+    print("\n⚠️ Objective 1 target not fully achieved. Check result above.")
+
+regression_result_df = pd.DataFrame([{
+    "R2": r2,
+    "RMSE": rmse,
+    "MAE": mae,
+    "Training_Samples": len(X_train_r),
+    "Testing_Samples": len(X_test_r),
+    "pH_Range_Used": "6.0 to 8.5",
+    "Training_Sites": str(TRAINING_SITE_IDS)
+}])
+
+regression_result_path = f"{OUTPUT_DIR}/V1_RFR_pH_Performance.csv"
+regression_result_df.to_csv(regression_result_path, index=False)
+
+# Plot actual vs predicted pH
+plt.figure(figsize=(8, 6))
+plt.scatter(y_test_r, y_pred_r, alpha=0.7, label="Predicted Points")
+
+min_val = min(y_test_r.min(), y_pred_r.min())
+max_val = max(y_test_r.max(), y_pred_r.max())
+
+plt.plot([min_val, max_val], [min_val, max_val], linestyle="--", linewidth=2, label="Ideal Line")
+
+plt.xlabel("Actual pH", fontweight="bold")
+plt.ylabel("Predicted pH", fontweight="bold")
+plt.title(f"Actual vs Predicted pH\nR² = {r2:.4f}, RMSE = {rmse:.4f}", fontweight="bold")
+plt.grid(True, linestyle="--", alpha=0.5)
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+# ============================================================
+# 10. OBJECTIVE 2: FEATURE IMPORTANCE ANALYSIS
+# ============================================================
+
+importance_scores = rfr_model.feature_importances_
+
+feature_importance_df = pd.DataFrame({
+    "Feature": reg_features,
+    "Importance_Score": importance_scores
+}).sort_values(by="Importance_Score", ascending=False).reset_index(drop=True)
+
+print("\n--- Objective 2: Feature Importance Ranking ---")
+print(feature_importance_df)
+
+feature_importance_path = f"{OUTPUT_DIR}/V1_RFR_Feature_Importance.csv"
+feature_importance_df.to_csv(feature_importance_path, index=False)
+
+plt.figure(figsize=(8, 5))
+sns.barplot(
+    x="Importance_Score",
+    y="Feature",
+    data=feature_importance_df,
+    hue="Feature",
+    palette="viridis",
+    legend=False
+)
+plt.title("Feature Importance: Influence on pH Prediction")
+plt.xlabel("Importance Score")
+plt.ylabel("Sensor Parameter")
+plt.xlim(0, 1)
+plt.tight_layout()
+plt.show()
+
+# ============================================================
+# 11. OBJECTIVE 3: RANDOM FOREST CLASSIFIER
+# ============================================================
+
+df_clf = df_clean.copy()
+
+# Remove unrealistic pH values for classifier training
+df_clf = df_clf[(df_clf["pH"] >= 4.0) & (df_clf["pH"] <= 14.0)].copy()
+
+# 0 = Optimal, 1 = Critical
+ph_safe = (df_clf["pH"] >= 6.5) & (df_clf["pH"] <= 8.5)
+temp_safe = (df_clf["Temperature"] >= 25.0) & (df_clf["Temperature"] <= 32.0)
+turbidity_safe = df_clf["Turbidity"] < 30.0
+tds_safe = df_clf["Total_Dissolved_Solids"] <= 500.0
+
+df_clf["Status"] = np.where(
+    ph_safe & temp_safe & turbidity_safe & tds_safe,
+    0,
+    1
+)
+
+print("\n✅ Classifier dataset created")
+print("Classifier samples:", len(df_clf))
+
+print("\nClass distribution:")
+print(df_clf["Status"].value_counts().sort_index())
+
+print("\nClass distribution percentage:")
+print((df_clf["Status"].value_counts(normalize=True).sort_index() * 100).round(2))
+
+clf_features = ["pH", "Temperature", "Turbidity", "Total_Dissolved_Solids"]
+
+X_clf = df_clf[clf_features]
+y_clf = df_clf["Status"]
+
+X_train_c, X_test_c, y_train_c, y_test_c = train_test_split(
+    X_clf,
+    y_clf,
+    test_size=0.20,
+    random_state=42,
+    stratify=y_clf
+)
+
+scaler_clf = MinMaxScaler()
+X_train_c_scaled = scaler_clf.fit_transform(X_train_c)
+X_test_c_scaled = scaler_clf.transform(X_test_c)
+
+rfc_model = RandomForestClassifier(
+    n_estimators=300,
+    random_state=42,
+    n_jobs=-1,
+    class_weight="balanced"
+)
+
+rfc_model.fit(X_train_c_scaled, y_train_c)
+
+y_pred_c = rfc_model.predict(X_test_c_scaled)
+
+clf_accuracy = accuracy_score(y_test_c, y_pred_c)
+
+print("\n--- Objective 3: RFC Classification Results ---")
+print(f"Classification Accuracy: {clf_accuracy:.4f}")
+
+print("\nDetailed Classification Report:")
+print(classification_report(
+    y_test_c,
+    y_pred_c,
+    labels=[0, 1],
+    target_names=["Optimal (Class 0)", "Critical (Class 1)"],
+    zero_division=0
+))
+
+cm = confusion_matrix(y_test_c, y_pred_c, labels=[0, 1])
+
+fig, ax = plt.subplots(figsize=(6, 5))
+disp = ConfusionMatrixDisplay(
+    confusion_matrix=cm,
+    display_labels=["Optimal", "Critical"]
+)
+disp.plot(ax=ax, values_format="d")
+plt.title("Confusion Matrix for Water Quality Classification", fontweight="bold")
+plt.tight_layout()
+plt.show()
+
+classification_result_df = pd.DataFrame([{
+    "Accuracy": clf_accuracy,
+    "Training_Samples": len(X_train_c),
+    "Testing_Samples": len(X_test_c),
+    "Optimal_Count": int((df_clf["Status"] == 0).sum()),
+    "Critical_Count": int((df_clf["Status"] == 1).sum())
+}])
+
+classification_result_path = f"{OUTPUT_DIR}/V1_RFC_Classification_Performance.csv"
+classification_result_df.to_csv(classification_result_path, index=False)
+
+# ============================================================
+# 12. SAVE MODELS FOR STREAMLIT DASHBOARD
+# ============================================================
+
+model_metadata = {
+    "version": "V1_refined_single_target_pH_with_precleaning_report",
+    "model_type": "Single-target Random Forest Regressor + Random Forest Classifier",
+
+    "raw_analysis_sites": [1, 2, 5],
+    "training_sites": TRAINING_SITE_IDS,
+    "excluded_site": "Site 5 excluded from training due to abnormal pH readings",
+
+    "regression_features": reg_features,
+    "classification_features": clf_features,
+    "regression_target": "pH",
+
+    "regression_cleaning": {
+        "pH_min": 6.0,
+        "pH_max": 8.5,
+        "reason": "Operating-range pH prediction to reduce abnormal sensor influence"
+    },
+
+    "classification_thresholds": {
+        "ph_min": 6.5,
+        "ph_max": 8.5,
+        "temp_min": 25.0,
+        "temp_max": 32.0,
+        "turbidity_max": 30.0,
+        "tds_max": 500.0
+    },
+
+    "emergency_thresholds": {
+        "ph_min": 6.5,
+        "ph_max": 8.5,
+        "temp_min": 25.0,
+        "temp_max": 35.0,
+        "turbidity_max": 30.0,
+        "tds_max": 500.0
+    },
+
+    "class_mapping": {
+        0: "Optimal",
+        1: "Critical"
+    }
+}
+
+joblib.dump(scaler_reg, f"{OUTPUT_DIR}/scaler_reg.pkl")
+joblib.dump(rfr_model, f"{OUTPUT_DIR}/rfr_model.pkl")
+
+joblib.dump(scaler_clf, f"{OUTPUT_DIR}/scaler_clf.pkl")
+joblib.dump(rfc_model, f"{OUTPUT_DIR}/rfc_model.pkl")
+
+joblib.dump(model_metadata, f"{OUTPUT_DIR}/model_metadata.pkl")
+
+print("\n✅ Models saved successfully:")
+print(f"{OUTPUT_DIR}/scaler_reg.pkl")
+print(f"{OUTPUT_DIR}/rfr_model.pkl")
+print(f"{OUTPUT_DIR}/scaler_clf.pkl")
+print(f"{OUTPUT_DIR}/rfc_model.pkl")
+print(f"{OUTPUT_DIR}/model_metadata.pkl")
+
+# ============================================================
+# 13. QUICK DASHBOARD TEST
+# ============================================================
+
+sample_data = pd.DataFrame([{
+    "Temperature": 28.5,
+    "Turbidity": 10.0,
+    "Total_Dissolved_Solids": 200.0
+}])
+
+sample_scaled = scaler_reg.transform(sample_data[reg_features])
+sample_predicted_ph = float(rfr_model.predict(sample_scaled)[0])
+
+sample_clf_input = pd.DataFrame([{
+    "pH": sample_predicted_ph,
+    "Temperature": 28.5,
+    "Turbidity": 10.0,
+    "Total_Dissolved_Solids": 200.0
+}])
+
+sample_clf_scaled = scaler_clf.transform(sample_clf_input[clf_features])
+sample_status = int(rfc_model.predict(sample_clf_scaled)[0])
+
+print("\n--- Dashboard-style Test ---")
+print("Input sensor values:")
+print(sample_data)
+print(f"\nAI Estimated pH: {sample_predicted_ph:.2f}")
+print("Predicted Status:", model_metadata["class_mapping"][sample_status])
+
+print("\n✅ Training pipeline completed.")
